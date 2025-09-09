@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Context Lens - Visual Explainer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom style for the video element to ensure it covers the container */
+        #video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        /* Custom scrollbar for a cleaner look */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        /* Gradient text for title */
+        .gradient-text {
+            background: linear-gradient(to right, #4f46e5, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-5xl mx-auto p-4 md:p-6 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold gradient-text">Context Lens</h1>
+            <p class="text-slate-600 mt-2 text-lg">Point your camera at anything and let AI explain it.</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Camera and Controls Section -->
+            <div class="bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+                <div id="camera-container" class="relative w-full aspect-video bg-slate-900 flex items-center justify-center text-white">
+                    <video id="video-feed" autoplay playsinline muted></video>
+                    <div id="placeholder" class="absolute inset-0 flex flex-col items-center justify-center p-4">
+                         <svg class="w-16 h-16 text-slate-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.55a2 2 0 01.95 1.66V13h0a2 2 0 01-2 2h-3m-6 0H5a2 2 0 01-2-2v-1.34a2 2 0 01.95-1.66L8.5 6H12m6 12h-3a2 2 0 00-2 2v1a2 2 0 002 2h3a2 2 0 002-2v-1a2 2 0 00-2-2z"></path></svg>
+                        <p id="camera-status" class="text-center text-slate-400">Requesting camera access...</p>
+                    </div>
+                </div>
+                <div class="p-6 border-t border-slate-200">
+                    <button id="analyze-button" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition-all duration-300 ease-in-out disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center" disabled>
+                        <svg id="button-icon" class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <span id="button-text">Analyze</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- AI Explanation Section -->
+            <div class="bg-white rounded-2xl shadow-lg flex flex-col">
+                 <div class="p-6 border-b border-slate-200">
+                    <h2 class="text-2xl font-bold text-slate-800">Explanation</h2>
+                </div>
+                <div id="explanation-container" class="p-6 flex-grow custom-scrollbar overflow-y-auto min-h-[200px] lg:min-h-0">
+                    <!-- Loading Skeleton -->
+                    <div id="loading-skeleton" class="hidden animate-pulse">
+                        <div class="h-4 bg-slate-200 rounded w-3/4 mb-4"></div>
+                        <div class="h-4 bg-slate-200 rounded w-full mb-2"></div>
+                        <div class="h-4 bg-slate-200 rounded w-full mb-2"></div>
+                        <div class="h-4 bg-slate-200 rounded w-5/6 mb-4"></div>
+                        <div class="h-4 bg-slate-200 rounded w-1/2"></div>
+                    </div>
+                    <!-- Explanation Content -->
+                    <div id="explanation-content" class="prose max-w-none text-slate-600">
+                        <p id="initial-message">Point your camera at an object and click "Analyze" to learn more about it. For example, try a plant, a piece of technology, or a landmark.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Hidden canvas for capturing frames -->
+    <canvas id="canvas" class="hidden"></canvas>
+
+    <script>
+        const video = document.getElementById('video-feed');
+        const canvas = document.getElementById('canvas');
+        const analyzeButton = document.getElementById('analyze-button');
+        const buttonText = document.getElementById('button-text');
+        const buttonIcon = document.getElementById('button-icon');
+        const placeholder = document.getElementById('placeholder');
+        const cameraStatus = document.getElementById('camera-status');
+        const explanationContainer = document.getElementById('explanation-container');
+        const explanationContent = document.getElementById('explanation-content');
+        const loadingSkeleton = document.getElementById('loading-skeleton');
+        const initialMessage = document.getElementById('initial-message');
+
+        // --- IMPORTANT: PASTE YOUR GEMINI API KEY HERE ---
+        const API_KEY = 'AIzaSyARb6wzpVpXBEjBCdX5vYyKcWksPZxZVOw'; 
+        // --------------------------------------------------
+
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
+        
+        let stream;
+
+        // 1. --- Camera Setup ---
+        async function setupCamera() {
+            try {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' } // Prefer the rear camera
+                });
+                video.srcObject = stream;
+                video.addEventListener('loadedmetadata', () => {
+                    placeholder.classList.add('hidden');
+                    analyzeButton.disabled = false;
+                });
+            } catch (err) {
+                console.error("Error accessing camera: ", err);
+                cameraStatus.innerHTML = `<strong>Error:</strong> Could not access camera. <br> Please grant permission and ensure you are on a secure (https) connection.`;
+                analyzeButton.disabled = true;
+            }
+        }
+
+        // 2. --- Capture Frame and Call API ---
+        async function analyzeFrame() {
+            if (API_KEY === 'YOUR_API_KEY_HERE') {
+                explanationContent.innerHTML = `<p class="text-red-500 font-semibold">Configuration Error: Please paste your Gemini API Key into the 'context-lens.html' file to enable analysis.</p>`;
+                return;
+            }
+
+            // Disable button and show loading state
+            analyzeButton.disabled = true;
+            buttonText.textContent = 'Analyzing...';
+            buttonIcon.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24"> <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle> <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> </svg>`;
+            
+            if (initialMessage) initialMessage.classList.add('hidden');
+            explanationContent.classList.add('hidden');
+            loadingSkeleton.classList.remove('hidden');
+
+            // Capture frame from video
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to Base64 and remove the data URL prefix
+            const base64ImageData = canvas.toDataURL('image/jpeg').split(',')[1];
+
+            // Prepare API payload
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: "You are an expert in identifying objects, landmarks, and items of interest. Analyze the image and provide a detailed, engaging, and informative explanation. Start with a clear identification of the primary subject. Then, describe its history, function, or significance. If it's a natural object like a plant, describe its characteristics and habitat. Format your response in clear paragraphs." },
+                        {
+                            inlineData: {
+                                mimeType: "image/jpeg",
+                                data: base64ImageData
+                            }
+                        }
+                    ]
+                }],
+                generationConfig: {
+                  "temperature": 0.4,
+                  "topK": 32,
+                  "topP": 1,
+                  "maxOutputTokens": 4096,
+                  "stopSequences": []
+                }
+            };
+            
+            // Make API call
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorBody = await response.json();
+                    throw new Error(`API Error: ${response.status} ${response.statusText}. ${errorBody.error?.message || ''}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates.length > 0 && result.candidates[0].content.parts[0].text) {
+                    let text = result.candidates[0].content.parts[0].text;
+                    // Basic formatting to convert markdown-like bolding to HTML
+                    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    text = text.replace(/\n/g, '<br>');
+                    explanationContent.innerHTML = `<p>${text}</p>`;
+                } else {
+                    explanationContent.innerHTML = `<p class="text-amber-600">Could not get a valid explanation from the AI. The image might be unclear or the subject unrecognizable. Please try again.</p>`;
+                }
+
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                explanationContent.innerHTML = `<p class="text-red-500 font-semibold">An error occurred while analyzing the image. Please check the console for details and ensure your API key is valid.</p>`;
+            } finally {
+                // Restore button and hide loading state
+                analyzeButton.disabled = false;
+                buttonText.textContent = 'Analyze';
+                buttonIcon.innerHTML = `<svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>`;
+                loadingSkeleton.classList.add('hidden');
+                explanationContent.classList.remove('hidden');
+            }
+        }
+
+        // 3. --- Event Listeners ---
+        analyzeButton.addEventListener('click', analyzeFrame);
+        window.addEventListener('load', setupCamera);
+
+    </script>
+</body>
+</html>
